@@ -1,0 +1,25 @@
+[package]
+name = "photo-vault"
+version = "0.1.0"
+description = "Local photo vault with collections"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "photo_vault_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+arboard = "3"
+dirs = "6"
+image = "0.25"
+open = "5"
