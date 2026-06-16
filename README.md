@@ -6,16 +6,20 @@ App desktop (Tauri 2 + React) lưu ảnh **trực tiếp vào folder trên disk*
 
 ```
 Documents/PhotoVault/
-├── Inbox/                  ← paste mặc định
-├── ⭐ Đã đánh dấu/         ← tự động khi bấm sao
-├── ten-bo-suu-tap/         ← bộ sưu tập custom
-└── ...
+├── Default/                    ← folder mặc định
+│   ├── Inbox/
+│   ├── ⭐ Đã đánh dấu/         ← starred riêng của folder này
+│   └── ten-bo-suu-tap/
+├── Cong-viec/                  ← folder khác, starred độc lập
+│   ├── Inbox/
+│   ├── ⭐ Đã đánh dấu/
+│   └── ...
 ```
 
-- Mỗi bộ sưu tập = 1 folder trên disk
-- Paste ảnh → file `.png` / `.jpg` được ghi thẳng vào folder bộ sưu tập đang chọn
-- Đánh dấu sao → hardlink/copy vào folder `⭐ Đã đánh dấu`
-- Thêm vào bộ khác → hardlink/copy sang folder đó (không nhân bản dữ liệu nếu NTFS hỗ trợ hardlink)
+- **Folder** = nhóm bộ sưu tập (mỗi folder độc lập)
+- **Bộ sưu tập** = subfolder bên trong 1 folder
+- **⭐ Đã đánh dấu** = riêng từng folder, không dùng chung
+- Ảnh cũ ở layout phẳng sẽ tự chuyển vào `Default/`
 
 ## Chức năng
 

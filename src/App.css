@@ -38,7 +38,7 @@ select {
 
 .app {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 300px 1fr;
   height: 100vh;
   outline: none;
 }
@@ -46,10 +46,59 @@ select {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   padding: 20px 16px;
   background: #171a21;
   border-right: 1px solid #2a2f3a;
+  overflow: auto;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-section h3 {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9aa0a6;
+}
+
+.vault-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vault-folder-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.vault-folder-item.active .vault-folder-btn {
+  background: #243047;
+  border-color: #6366f1;
+}
+
+.vault-folder-btn {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.vault-folder-btn:hover {
+  background: #222733;
 }
 
 .brand h1 {
@@ -151,6 +200,7 @@ select {
   cursor: pointer;
   padding: 4px;
   opacity: 0.7;
+  font-size: 0.85rem;
 }
 
 .collection-actions button:hover {
@@ -197,6 +247,41 @@ select {
   font-size: 0.875rem;
 }
 
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 24px 12px;
+  padding: 12px 14px;
+  background: #1a2332;
+  border: 1px solid #3b82f6;
+  border-radius: 10px;
+}
+
+.bulk-bar span {
+  font-size: 0.875rem;
+  color: #cbd5e1;
+  margin-right: 4px;
+}
+
+.bulk-bar select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #3c4454;
+  background: #222733;
+  color: inherit;
+}
+
+.btn.danger {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+.btn.danger:hover {
+  background: #3f1212;
+}
+
 .empty {
   flex: 1;
   display: grid;
@@ -221,12 +306,45 @@ select {
   border: 1px solid #2a2f3a;
   border-radius: 12px;
   overflow: hidden;
-  padding: 0;
   background: #171a21;
+}
+
+.gallery-item.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
+.gallery-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.65);
   cursor: pointer;
 }
 
-.gallery-item img {
+.gallery-check input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #3b82f6;
+}
+
+.gallery-open {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.gallery-open img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -251,9 +369,40 @@ select {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.72);
+  z-index: 100;
+}
+
+.viewer-backdrop {
+  display: flex;
+  padding: 12px 16px;
+  box-sizing: border-box;
+}
+
+.viewer-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 101;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid #3c4454;
+  background: rgba(23, 26, 33, 0.95);
+  color: #e8eaed;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
   display: grid;
   place-items: center;
-  z-index: 100;
+}
+
+.viewer-close:hover {
+  background: #2b3240;
+}
+
+.modal-backdrop {
+  display: grid;
+  place-items: center;
 }
 
 .modal {
@@ -295,10 +444,11 @@ select {
 .viewer {
   display: grid;
   grid-template-columns: 56px 1fr 56px;
-  align-items: center;
+  align-items: stretch;
   gap: 12px;
-  width: min(1200px, calc(100vw - 32px));
-  height: min(90vh, 900px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .viewer-content {
@@ -306,19 +456,84 @@ select {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
   height: 100%;
 }
 
-.viewer-content img {
+.viewer-image-stage {
   flex: 1;
   min-height: 0;
-  width: 100%;
-  object-fit: contain;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #0f1115;
   border-radius: 12px;
+  overflow: hidden;
+}
+
+.viewer-image-stage.is-panning {
+  cursor: grab;
+}
+
+.viewer-image-stage.is-panning:active {
+  cursor: grabbing;
+}
+
+.viewer-image-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  transform-origin: center center;
+  user-select: none;
+  will-change: transform;
+}
+
+.viewer-zoom-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid #3c4454;
+  background: rgba(23, 26, 33, 0.92);
+}
+
+.viewer-zoom-controls button {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #3c4454;
+  background: #222733;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.viewer-zoom-controls button:last-child {
+  width: auto;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.viewer-zoom-controls span {
+  min-width: 48px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #cbd5e1;
 }
 
 .viewer-meta {
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -327,6 +542,7 @@ select {
 }
 
 .viewer-actions {
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -352,6 +568,7 @@ select {
 }
 
 .nav-btn {
+  align-self: center;
   width: 56px;
   height: 56px;
   border-radius: 999px;

@@ -1,36 +1,78 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Collection, ImageRecord } from "./types";
+import type { Collection, ImageRecord, VaultFolder } from "./types";
 
 export const api = {
   getVaultPath: () => invoke<string>("get_vault_path"),
+  getDefaultVaultFolderId: () => invoke<string>("get_default_vault_folder_id"),
   getDefaultCollectionId: () => invoke<string>("get_default_collection_id"),
-  listCollections: () => invoke<Collection[]>("list_collections"),
-  createCollection: (name: string) =>
-    invoke<Collection>("create_collection", { name }),
-  deleteCollection: (collectionId: string) =>
-    invoke<void>("delete_collection", { collectionId }),
-  listImages: (collectionId: string) =>
-    invoke<ImageRecord[]>("list_images", { collectionId }),
+  listVaultFolders: () => invoke<VaultFolder[]>("list_vault_folders"),
+  createVaultFolder: (name: string) =>
+    invoke<VaultFolder>("create_vault_folder", { name }),
+  deleteVaultFolder: (vaultFolderId: string) =>
+    invoke<void>("delete_vault_folder", { vaultFolderId }),
+  renameVaultFolder: (vaultFolderId: string, newName: string) =>
+    invoke<VaultFolder>("rename_vault_folder", { vaultFolderId, newName }),
+  listCollections: (vaultFolderId: string) =>
+    invoke<Collection[]>("list_collections", { vaultFolderId }),
+  createCollection: (vaultFolderId: string, name: string) =>
+    invoke<Collection>("create_collection", { vaultFolderId, name }),
+  deleteCollection: (vaultFolderId: string, collectionId: string) =>
+    invoke<void>("delete_collection", { vaultFolderId, collectionId }),
+  renameCollection: (
+    vaultFolderId: string,
+    collectionId: string,
+    newName: string,
+  ) =>
+    invoke<Collection>("rename_collection", {
+      vaultFolderId,
+      collectionId,
+      newName,
+    }),
+  listImages: (vaultFolderId: string, collectionId: string) =>
+    invoke<ImageRecord[]>("list_images", { vaultFolderId, collectionId }),
   saveImageBytes: (
+    vaultFolderId: string,
     bytes: number[],
     collectionId: string,
     mimeType?: string,
   ) =>
     invoke<ImageRecord>("save_image_bytes", {
+      vaultFolderId,
       bytes,
       collectionId,
       mimeType,
     }),
-  pasteFromClipboard: (collectionId: string) =>
-    invoke<ImageRecord>("paste_from_clipboard", { collectionId }),
-  toggleStar: (filename: string) =>
-    invoke<ImageRecord>("toggle_star", { filename }),
-  addToCollection: (filename: string, collectionId: string) =>
-    invoke<ImageRecord>("add_to_collection", { filename, collectionId }),
-  removeFromCollection: (filename: string, collectionId: string) =>
-    invoke<ImageRecord>("remove_from_collection", { filename, collectionId }),
-  deleteImage: (filename: string) =>
-    invoke<void>("delete_image", { filename }),
-  openCollectionFolder: (collectionId: string) =>
-    invoke<void>("open_collection_folder", { collectionId }),
+  pasteFromClipboard: (vaultFolderId: string, collectionId: string) =>
+    invoke<ImageRecord>("paste_from_clipboard", {
+      vaultFolderId,
+      collectionId,
+    }),
+  toggleStar: (vaultFolderId: string, filename: string) =>
+    invoke<ImageRecord>("toggle_star", { vaultFolderId, filename }),
+  addToCollection: (
+    vaultFolderId: string,
+    filename: string,
+    collectionId: string,
+  ) =>
+    invoke<ImageRecord>("add_to_collection", {
+      vaultFolderId,
+      filename,
+      collectionId,
+    }),
+  removeFromCollection: (
+    vaultFolderId: string,
+    filename: string,
+    collectionId: string,
+  ) =>
+    invoke<ImageRecord>("remove_from_collection", {
+      vaultFolderId,
+      filename,
+      collectionId,
+    }),
+  deleteImage: (vaultFolderId: string, filename: string) =>
+    invoke<void>("delete_image", { vaultFolderId, filename }),
+  openVaultFolder: (vaultFolderId: string) =>
+    invoke<void>("open_vault_folder", { vaultFolderId }),
+  openCollectionFolder: (vaultFolderId: string, collectionId: string) =>
+    invoke<void>("open_collection_folder", { vaultFolderId, collectionId }),
 };

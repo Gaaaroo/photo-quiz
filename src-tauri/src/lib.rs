@@ -3,7 +3,7 @@ mod vault;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
-use vault::{Collection, ImageRecord, Vault, INBOX_FOLDER};
+use vault::{Collection, ImageRecord, Vault, VaultFolder, DEFAULT_VAULT_FOLDER, INBOX_FOLDER};
 
 pub struct AppState {
     pub vault: Mutex<Vault>,
@@ -22,31 +22,86 @@ fn get_vault_path(state: State<AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn list_collections(state: State<AppState>) -> Result<Vec<Collection>, String> {
+fn list_vault_folders(state: State<AppState>) -> Result<Vec<VaultFolder>, String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.list_collections()
+    vault.list_vault_folders()
 }
 
 #[tauri::command]
-fn create_collection(name: String, state: State<AppState>) -> Result<Collection, String> {
+fn create_vault_folder(name: String, state: State<AppState>) -> Result<VaultFolder, String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.create_collection(&name)
+    vault.create_vault_folder(&name)
 }
 
 #[tauri::command]
-fn delete_collection(collection_id: String, state: State<AppState>) -> Result<(), String> {
+fn delete_vault_folder(vault_folder_id: String, state: State<AppState>) -> Result<(), String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.delete_collection(&collection_id)
+    vault.delete_vault_folder(&vault_folder_id)
 }
 
 #[tauri::command]
-fn list_images(collection_id: String, state: State<AppState>) -> Result<Vec<ImageRecord>, String> {
+fn rename_vault_folder(
+    vault_folder_id: String,
+    new_name: String,
+    state: State<AppState>,
+) -> Result<VaultFolder, String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.list_images_in_collection(&collection_id)
+    vault.rename_vault_folder(&vault_folder_id, &new_name)
+}
+
+#[tauri::command]
+fn list_collections(
+    vault_folder_id: String,
+    state: State<AppState>,
+) -> Result<Vec<Collection>, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.list_collections(&vault_folder_id)
+}
+
+#[tauri::command]
+fn create_collection(
+    vault_folder_id: String,
+    name: String,
+    state: State<AppState>,
+) -> Result<Collection, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.create_collection(&vault_folder_id, &name)
+}
+
+#[tauri::command]
+fn delete_collection(
+    vault_folder_id: String,
+    collection_id: String,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.delete_collection(&vault_folder_id, &collection_id)
+}
+
+#[tauri::command]
+fn rename_collection(
+    vault_folder_id: String,
+    collection_id: String,
+    new_name: String,
+    state: State<AppState>,
+) -> Result<Collection, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.rename_collection(&vault_folder_id, &collection_id, &new_name)
+}
+
+#[tauri::command]
+fn list_images(
+    vault_folder_id: String,
+    collection_id: String,
+    state: State<AppState>,
+) -> Result<Vec<ImageRecord>, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.list_images_in_collection(&vault_folder_id, &collection_id)
 }
 
 #[tauri::command]
 fn save_image_bytes(
+    vault_folder_id: String,
     bytes: Vec<u8>,
     collection_id: String,
     mime_type: Option<String>,
@@ -54,11 +109,12 @@ fn save_image_bytes(
 ) -> Result<ImageRecord, String> {
     let mime = mime_type.unwrap_or_else(|| "image/png".to_string());
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.save_bytes_to_collection(&bytes, &collection_id, &mime)
+    vault.save_bytes_to_collection(&vault_folder_id, &bytes, &collection_id, &mime)
 }
 
 #[tauri::command]
 fn paste_from_clipboard(
+    vault_folder_id: String,
     collection_id: String,
     state: State<AppState>,
 ) -> Result<ImageRecord, String> {
@@ -81,39 +137,54 @@ fn paste_from_clipboard(
     }
 
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.save_bytes_to_collection(&png_bytes, &collection_id, "image/png")
+    vault.save_bytes_to_collection(&vault_folder_id, &png_bytes, &collection_id, "image/png")
 }
 
 #[tauri::command]
-fn toggle_star(filename: String, state: State<AppState>) -> Result<ImageRecord, String> {
+fn toggle_star(
+    vault_folder_id: String,
+    filename: String,
+    state: State<AppState>,
+) -> Result<ImageRecord, String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.toggle_star(&filename)
+    vault.toggle_star(&vault_folder_id, &filename)
 }
 
 #[tauri::command]
 fn add_to_collection(
+    vault_folder_id: String,
     filename: String,
     collection_id: String,
     state: State<AppState>,
 ) -> Result<ImageRecord, String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.add_to_collection(&filename, &collection_id)
+    vault.add_to_collection(&vault_folder_id, &filename, &collection_id)
 }
 
 #[tauri::command]
 fn remove_from_collection(
+    vault_folder_id: String,
     filename: String,
     collection_id: String,
     state: State<AppState>,
 ) -> Result<ImageRecord, String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.remove_from_collection(&filename, &collection_id)
+    vault.remove_from_collection(&vault_folder_id, &filename, &collection_id)
 }
 
 #[tauri::command]
-fn delete_image(filename: String, state: State<AppState>) -> Result<(), String> {
+fn delete_image(
+    vault_folder_id: String,
+    filename: String,
+    state: State<AppState>,
+) -> Result<(), String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.delete_image(&filename)
+    vault.delete_image(&vault_folder_id, &filename)
+}
+
+#[tauri::command]
+fn get_default_vault_folder_id() -> String {
+    DEFAULT_VAULT_FOLDER.to_string()
 }
 
 #[tauri::command]
@@ -122,9 +193,19 @@ fn get_default_collection_id() -> String {
 }
 
 #[tauri::command]
-fn open_collection_folder(collection_id: String, state: State<AppState>) -> Result<(), String> {
+fn open_vault_folder(vault_folder_id: String, state: State<AppState>) -> Result<(), String> {
     let vault = state.vault.lock().map_err(|e| e.to_string())?;
-    vault.open_collection_in_explorer(&collection_id)
+    vault.open_vault_folder_in_explorer(&vault_folder_id)
+}
+
+#[tauri::command]
+fn open_collection_folder(
+    vault_folder_id: String,
+    collection_id: String,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.open_collection_in_explorer(&vault_folder_id, &collection_id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -139,9 +220,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_vault_path,
+            list_vault_folders,
+            create_vault_folder,
+            delete_vault_folder,
+            rename_vault_folder,
             list_collections,
             create_collection,
             delete_collection,
+            rename_collection,
             list_images,
             save_image_bytes,
             paste_from_clipboard,
@@ -149,7 +235,9 @@ pub fn run() {
             add_to_collection,
             remove_from_collection,
             delete_image,
+            get_default_vault_folder_id,
             get_default_collection_id,
+            open_vault_folder,
             open_collection_folder,
         ])
         .run(tauri::generate_context!())

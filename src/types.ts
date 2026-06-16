@@ -1,3 +1,9 @@
+export interface VaultFolder {
+  id: string;
+  name: string;
+  collection_count: number;
+}
+
 export interface Collection {
   id: string;
   name: string;
