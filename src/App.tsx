@@ -504,42 +504,51 @@ function App() {
           </p>
         </div>
 
-        <button
-          className="btn full"
-          onClick={() => setShowCreateVaultFolderModal(true)}
-        >
-          + Folder mới
-        </button>
-
-        <div className="sidebar-section">
-          <h3>Folders</h3>
-          <nav className="vault-folder-list">
+        <div className="sidebar-section sidebar-section-folders">
+          <div className="section-header">
+            <h3>Thư mục</h3>
+            <button
+              type="button"
+              className="section-add-btn"
+              onClick={() => setShowCreateVaultFolderModal(true)}
+            >
+              + Mới
+            </button>
+          </div>
+          <nav className="sidebar-nav">
             {vaultFolders.map((folder) => (
               <div
                 key={folder.id}
-                className={`vault-folder-item ${folder.id === activeVaultFolderId ? "active" : ""}`}
+                className={`sidebar-row ${folder.id === activeVaultFolderId ? "active" : ""}`}
               >
                 <button
-                  className="vault-folder-btn"
+                  type="button"
+                  className="sidebar-row-label"
                   onClick={() => setActiveVaultFolderId(folder.id)}
                 >
-                  <span>📂 {folder.name}</span>
+                  <span className="sidebar-row-name">{folder.name}</span>
                 </button>
-                <div className="collection-actions">
+                <div className="sidebar-row-actions">
                   <button
+                    type="button"
+                    className="icon-btn"
                     title="Đổi tên"
                     onClick={() => handleRenameVaultFolder(folder.id, folder.name)}
                   >
                     ✎
                   </button>
                   <button
-                    title="Mở folder"
+                    type="button"
+                    className="icon-btn"
+                    title="Mở trên Explorer"
                     onClick={() => handleOpenVaultFolder(folder.id)}
                   >
-                    📁
+                    ↗
                   </button>
                   {folder.id !== "Default" && (
                     <button
+                      type="button"
+                      className="icon-btn icon-btn-danger"
                       title="Xóa folder"
                       onClick={() => handleDeleteVaultFolder(folder.id)}
                     >
@@ -552,38 +561,46 @@ function App() {
           </nav>
         </div>
 
-        <div className="sidebar-section">
-          <h3>Bộ sưu tập</h3>
-          <button
-            className="btn primary full"
-            onClick={() => setShowCreateModal(true)}
-          >
-            + Bộ sưu tập mới
-          </button>
+        <div className="sidebar-section sidebar-section-collections">
+          <div className="section-header">
+            <h3>Bộ sưu tập</h3>
+            <button
+              type="button"
+              className="section-add-btn section-add-btn-primary"
+              onClick={() => setShowCreateModal(true)}
+            >
+              + Mới
+            </button>
+          </div>
 
-          <nav className="collection-list">
+          <nav className="sidebar-nav sidebar-nav-scroll">
             {collections.map((collection) => (
               <div
                 key={collection.id}
-                className={`collection-item ${collection.id === activeCollectionId ? "active" : ""}`}
+                className={`sidebar-row ${collection.id === activeCollectionId ? "active" : ""}`}
               >
                 <button
-                  className="collection-btn"
+                  type="button"
+                  className="sidebar-row-label"
                   onClick={() => setActiveCollectionId(collection.id)}
                 >
-                  <span>{collection.name}</span>
+                  <span className="sidebar-row-name">{collection.name}</span>
                   <span className="count">{collection.image_count}</span>
                 </button>
-                <div className="collection-actions">
+                <div className="sidebar-row-actions">
                   <button
-                    title="Mở folder"
+                    type="button"
+                    className="icon-btn"
+                    title="Mở trên Explorer"
                     onClick={() => handleOpenFolder(collection.id)}
                   >
-                    📁
+                    ↗
                   </button>
                   {!collection.is_system && (
                     <>
                       <button
+                        type="button"
+                        className="icon-btn"
                         title="Đổi tên"
                         onClick={() =>
                           handleRenameCollection(collection.id, collection.name)
@@ -592,6 +609,8 @@ function App() {
                         ✎
                       </button>
                       <button
+                        type="button"
+                        className="icon-btn icon-btn-danger"
                         title="Xóa bộ sưu tập"
                         onClick={() => handleDeleteCollection(collection.id)}
                       >
@@ -608,27 +627,36 @@ function App() {
 
       <main className="main">
         <header className="toolbar">
-          <div>
-            <h2>
-              {activeVaultFolder?.name ?? activeVaultFolderId} /{" "}
-              {activeCollection?.name ?? activeCollectionId}
-            </h2>
-            <p>
+          <div className="toolbar-title">
+            <div className="breadcrumb">
+              <span>{activeVaultFolder?.name ?? activeVaultFolderId}</span>
+              <span className="breadcrumb-sep">/</span>
+              <span className="breadcrumb-current">
+                {activeCollection?.name ?? activeCollectionId}
+              </span>
+            </div>
+            <p className="toolbar-subtitle">
               {images.length} ảnh
-              {selectedCount > 0 ? ` · ${selectedCount} đã chọn` : ""} · Ctrl+V
-              để paste
+              {selectedCount > 0 && (
+                <span className="toolbar-highlight"> · {selectedCount} đã chọn</span>
+              )}
+              <span className="toolbar-muted"> · Ctrl+V để paste</span>
             </p>
           </div>
           <div className="toolbar-actions">
             {images.length > 0 && (
-              <button className="btn" onClick={toggleSelectAll}>
+              <button type="button" className="btn" onClick={toggleSelectAll}>
                 {allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
               </button>
             )}
-            <button className="btn" onClick={() => handleOpenFolder(activeCollectionId)}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => handleOpenFolder(activeCollectionId)}
+            >
               Mở folder
             </button>
-            <button className="btn primary" onClick={handlePasteButton}>
+            <button type="button" className="btn primary" onClick={handlePasteButton}>
               Paste ảnh
             </button>
           </div>
@@ -636,32 +664,42 @@ function App() {
 
         {selectedCount > 0 && (
           <div className="bulk-bar">
-            <span>{selectedCount} ảnh đã chọn</span>
-            <select
-              defaultValue=""
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value) {
-                  void handleBulkAddToCollection(value);
-                  e.target.value = "";
-                }
-              }}
-            >
-              <option value="">Thêm vào bộ sưu tập...</option>
-              {collections
-                .filter((c) => !c.is_system)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-            </select>
-            <button className="btn danger" onClick={() => void handleBulkDelete()}>
-              Xóa đã chọn
-            </button>
-            <button className="btn" onClick={clearSelection}>
-              Bỏ chọn
-            </button>
+            <div className="bulk-bar-info">
+              <strong>{selectedCount}</strong>
+              <span>ảnh đã chọn</span>
+            </div>
+            <div className="bulk-bar-actions">
+              <select
+                className="bulk-select"
+                defaultValue=""
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value) {
+                    void handleBulkAddToCollection(value);
+                    e.target.value = "";
+                  }
+                }}
+              >
+                <option value="">Thêm vào bộ sưu tập...</option>
+                {collections
+                  .filter((c) => !c.is_system)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
+              <button
+                type="button"
+                className="btn danger"
+                onClick={() => void handleBulkDelete()}
+              >
+                Xóa đã chọn
+              </button>
+              <button type="button" className="btn" onClick={clearSelection}>
+                Bỏ chọn
+              </button>
+            </div>
           </div>
         )}
 
@@ -732,10 +770,7 @@ function App() {
               placeholder="Tên folder (vd: Công việc, Game...)"
             />
             <div className="modal-actions">
-              <button
-                type="button"
-                onClick={() => setShowCreateVaultFolderModal(false)}
-              >
+              <button type="button" className="btn" onClick={() => setShowCreateVaultFolderModal(false)}>
                 Hủy
               </button>
               <button type="submit" className="btn primary">
@@ -762,7 +797,7 @@ function App() {
               placeholder="Tên bộ sưu tập..."
             />
             <div className="modal-actions">
-              <button type="button" onClick={() => setShowCreateModal(false)}>
+              <button type="button" className="btn" onClick={() => setShowCreateModal(false)}>
                 Hủy
               </button>
               <button type="submit" className="btn primary">
@@ -830,53 +865,57 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="viewer-meta">
-                <span>
-                  {viewerIndex + 1} / {images.length}
-                </span>
-                <span>{viewerImage.filename}</span>
-                <span>{viewerImage.created_at}</span>
-                <span>Cuộn chuột hoặc +/- để zoom</span>
-              </div>
+              <div className="viewer-footer">
+                <div className="viewer-meta">
+                  <span className="viewer-badge">
+                    {viewerIndex + 1} / {images.length}
+                  </span>
+                  <span className="viewer-filename">{viewerImage.filename}</span>
+                  <span>{viewerImage.created_at}</span>
+                </div>
+                <p className="viewer-hint">Cuộn chuột hoặc +/- để zoom · Esc để đóng</p>
+                <div className="viewer-actions">
+                  <button
+                    type="button"
+                    className={`btn ${viewerImage.is_starred ? "active" : ""}`}
+                    onClick={() => handleToggleStar(viewerImage)}
+                  >
+                    {viewerImage.is_starred ? "★ Đã sao" : "☆ Đánh dấu sao"}
+                  </button>
 
-              <div className="viewer-actions">
-                <button
-                  className={viewerImage.is_starred ? "active" : ""}
-                  onClick={() => handleToggleStar(viewerImage)}
-                >
-                  {viewerImage.is_starred ? "★ Đã sao" : "☆ Đánh dấu sao"}
-                </button>
+                  <select
+                    className="viewer-select"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value) {
+                        void handleAddToCollection(viewerImage.filename, value);
+                        e.target.value = "";
+                      }
+                    }}
+                  >
+                    <option value="">+ Thêm vào bộ sưu tập...</option>
+                    {collections
+                      .filter(
+                        (c) =>
+                          !c.is_system &&
+                          !viewerImage.collection_ids.includes(c.id),
+                      )
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                  </select>
 
-                <select
-                  defaultValue=""
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value) {
-                      void handleAddToCollection(viewerImage.filename, value);
-                      e.target.value = "";
-                    }
-                  }}
-                >
-                  <option value="">+ Thêm vào bộ sưu tập...</option>
-                  {collections
-                    .filter(
-                      (c) =>
-                        !c.is_system &&
-                        !viewerImage.collection_ids.includes(c.id),
-                    )
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
-
-                <button
-                  className="danger"
-                  onClick={() => handleDeleteImage(viewerImage.filename)}
-                >
-                  Xóa ảnh
-                </button>
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={() => handleDeleteImage(viewerImage.filename)}
+                  >
+                    Xóa ảnh
+                  </button>
+                </div>
               </div>
             </div>
 
