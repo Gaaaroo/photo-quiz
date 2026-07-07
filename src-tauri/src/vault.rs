@@ -76,6 +76,7 @@ impl Vault {
         let vault = Vault { root: root.to_path_buf() };
         if vault.list_vault_folders()?.is_empty() {
             vault.create_vault_folder(DEFAULT_VAULT_FOLDER)?;
+            vault.ensure_default_collections(DEFAULT_VAULT_FOLDER)?;
         }
         Ok(())
     }
@@ -120,7 +121,7 @@ impl Vault {
             .join(collection_id)
     }
 
-    fn init_vault_folder_dirs(&self, vault_folder_id: &str) -> Result<(), String> {
+    fn ensure_default_collections(&self, vault_folder_id: &str) -> Result<(), String> {
         fs::create_dir_all(self.collection_path(vault_folder_id, INBOX_FOLDER))
             .map_err(|e| e.to_string())?;
         fs::create_dir_all(self.collection_path(vault_folder_id, STARRED_FOLDER))
@@ -186,11 +187,10 @@ impl Vault {
             return Err("Folder này đã tồn tại".into());
         }
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        self.init_vault_folder_dirs(&folder_name)?;
         Ok(VaultFolder {
             id: folder_name.clone(),
             name: folder_name.clone(),
-            collection_count: 2,
+            collection_count: self.count_collections_in_vault_folder(&folder_name)?,
         })
     }
 
@@ -245,11 +245,16 @@ impl Vault {
             return Err("Folder không tồn tại".into());
         }
 
-        self.init_vault_folder_dirs(vault_folder_id)?;
+        if vault_folder_id == DEFAULT_VAULT_FOLDER {
+            self.ensure_default_collections(vault_folder_id)?;
+        }
 
         let mut collections = Vec::new();
         for name in [INBOX_FOLDER, STARRED_FOLDER] {
             let dir = self.collection_path(vault_folder_id, name);
+            if !dir.is_dir() {
+                continue;
+            }
             collections.push(Collection {
                 id: name.to_string(),
                 name: name.to_string(),

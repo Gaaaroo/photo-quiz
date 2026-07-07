@@ -99,6 +99,10 @@ function App() {
 
   const refreshImages = useCallback(
     async (vaultFolderId: string, collectionId: string) => {
+      if (!collectionId) {
+        setImages([]);
+        return;
+      }
       const data = await api.listImages(vaultFolderId, collectionId);
       setImages(data);
     },
@@ -140,17 +144,30 @@ function App() {
   }, [refreshCollections, refreshImages, refreshVaultFolders]);
 
   useEffect(() => {
-    if (!loading) {
-      refreshCollections(activeVaultFolderId);
-      setActiveCollectionId("Inbox");
+    if (loading) return;
+
+    let cancelled = false;
+    void (async () => {
+      const data = await api.listCollections(activeVaultFolderId);
+      if (cancelled) return;
+      setCollections(data);
+      setActiveCollectionId((current) =>
+        data.some((collection) => collection.id === current)
+          ? current
+          : (data[0]?.id ?? ""),
+      );
       setViewerIndex(null);
       clearSelection();
-    }
-  }, [activeVaultFolderId, loading, refreshCollections]);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVaultFolderId, loading]);
 
   useEffect(() => {
     if (!loading) {
-      refreshImages(activeVaultFolderId, activeCollectionId);
+      void refreshImages(activeVaultFolderId, activeCollectionId);
       setViewerIndex(null);
       clearSelection();
     }
@@ -169,6 +186,10 @@ function App() {
       for (const item of items) {
         if (!item.type.startsWith("image/")) continue;
         event.preventDefault();
+        if (!activeCollectionId) {
+          showStatus("Hãy tạo bộ sưu tập trước khi paste ảnh");
+          return;
+        }
         const file = item.getAsFile();
         if (!file) continue;
 
@@ -196,7 +217,9 @@ function App() {
   }, [handlePaste]);
 
   useEffect(() => {
-    resetViewerTransform();
+    if (viewerIndex === null) {
+      resetViewerTransform();
+    }
   }, [viewerIndex, resetViewerTransform]);
 
   useEffect(() => {
@@ -261,9 +284,9 @@ function App() {
 
       if (e.key === "Escape") {
         setViewerIndex(null);
-      } else if (e.key === "ArrowLeft" && viewerZoom <= 1) {
+      } else if (e.key === "ArrowLeft") {
         setViewerIndex((i) => (i !== null && i > 0 ? i - 1 : i));
-      } else if (e.key === "ArrowRight" && viewerZoom <= 1) {
+      } else if (e.key === "ArrowRight") {
         setViewerIndex((i) =>
           i !== null && i < images.length - 1 ? i + 1 : i,
         );
@@ -286,6 +309,10 @@ function App() {
   }, [viewerIndex, images, refreshAll, viewerZoom, changeZoom, resetViewerTransform, activeVaultFolderId]);
 
   async function handlePasteButton() {
+    if (!activeCollectionId) {
+      showStatus("Hãy tạo bộ sưu tập trước khi paste ảnh");
+      return;
+    }
     try {
       await api.pasteFromClipboard(activeVaultFolderId, activeCollectionId);
       await refreshAll();
@@ -319,10 +346,16 @@ function App() {
     }
     try {
       await api.deleteCollection(activeVaultFolderId, id);
+      const updated = await api.listCollections(activeVaultFolderId);
+      setCollections(updated);
       if (activeCollectionId === id) {
-        setActiveCollectionId("Inbox");
+        setActiveCollectionId(updated[0]?.id ?? "");
       }
-      await refreshAll();
+      await refreshVaultFolders();
+      await refreshImages(
+        activeVaultFolderId,
+        activeCollectionId === id ? (updated[0]?.id ?? "") : activeCollectionId,
+      );
       showStatus("Đã xóa bộ sưu tập");
     } catch (err) {
       showStatus(String(err));
@@ -656,7 +689,12 @@ function App() {
             >
               Mở folder
             </button>
-            <button type="button" className="btn primary" onClick={handlePasteButton}>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!activeCollectionId}
+              onClick={handlePasteButton}
+            >
               Paste ảnh
             </button>
           </div>
@@ -705,7 +743,12 @@ function App() {
 
         {status && <div className="status-bar">{status}</div>}
 
-        {images.length === 0 ? (
+        {!activeCollectionId ? (
+          <div className="empty">
+            <p>Folder này chưa có bộ sưu tập.</p>
+            <p>Bấm <strong>+ Mới</strong> ở sidebar để tạo bộ sưu tập đầu tiên.</p>
+          </div>
+        ) : images.length === 0 ? (
           <div className="empty">
             <p>Chưa có ảnh trong bộ sưu tập này.</p>
             <p>Chụp màn hình (Win+Shift+S) rồi nhấn Ctrl+V hoặc bấm Paste ảnh.</p>
@@ -761,7 +804,8 @@ function App() {
           >
             <h3>Tạo folder mới</h3>
             <p>
-              Mỗi folder có bộ sưu tập riêng và ⭐ Đã đánh dấu độc lập.
+              Folder mới bắt đầu trống. Tạo bộ sưu tập để lưu ảnh; ⭐ Đã đánh dấu
+              xuất hiện khi bạn đánh dấu sao.
             </p>
             <input
               autoFocus
@@ -873,7 +917,9 @@ function App() {
                   <span className="viewer-filename">{viewerImage.filename}</span>
                   <span>{viewerImage.created_at}</span>
                 </div>
-                <p className="viewer-hint">Cuộn chuột hoặc +/- để zoom · Esc để đóng</p>
+                <p className="viewer-hint">
+                  Cuộn chuột hoặc +/- để zoom · ← → chuyển ảnh · Esc để đóng
+                </p>
                 <div className="viewer-actions">
                   <button
                     type="button"
