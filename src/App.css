@@ -580,6 +580,101 @@ select {
   margin-top: 4px;
 }
 
+.add-collection-modal-backdrop {
+  z-index: 120;
+}
+
+.add-collection-modal {
+  width: min(460px, 100%);
+  max-height: min(80vh, 640px);
+  overflow: auto;
+}
+
+.add-collection-modal h4 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.collection-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.collection-picker-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.collection-picker-item:hover {
+  background: #2b3240;
+  border-color: var(--border-strong);
+}
+
+.collection-picker-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-picker-meta {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.collection-picker-empty {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.collection-picker-create {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.collection-picker-create form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collection-picker-create input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: inherit;
+}
+
+.collection-picker-create .btn {
+  align-self: flex-end;
+}
+
 /* Viewer */
 .viewer-close {
   position: fixed;

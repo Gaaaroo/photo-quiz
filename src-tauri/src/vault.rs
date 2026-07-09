@@ -585,10 +585,6 @@ impl Vault {
             return self.build_image_record(vault_folder_id, &source, filename);
         }
 
-        if collection_id == INBOX_FOLDER {
-            return Err("Không thể gỡ ảnh khỏi Inbox. Hãy xóa ảnh nếu không cần.".into());
-        }
-
         let path = self
             .collection_path(vault_folder_id, collection_id)
             .join(filename);
@@ -596,8 +592,17 @@ impl Vault {
             fs::remove_file(&path).map_err(|e| e.to_string())?;
         }
 
-        let source = self.find_source_path(vault_folder_id, filename)?;
-        self.build_image_record(vault_folder_id, &source, filename)
+        match self.find_source_path(vault_folder_id, filename) {
+            Ok(source) => self.build_image_record(vault_folder_id, &source, filename),
+            Err(_) => Ok(ImageRecord {
+                id: filename.to_string(),
+                filename: filename.to_string(),
+                file_path: String::new(),
+                is_starred: false,
+                created_at: String::new(),
+                collection_ids: vec![],
+            }),
+        }
     }
 
     pub fn delete_image(&self, vault_folder_id: &str, filename: &str) -> Result<(), String> {

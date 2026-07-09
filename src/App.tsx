@@ -15,6 +15,9 @@ function App() {
   const [newCollectionName, setNewCollectionName] = useState("");
   const [newVaultFolderName, setNewVaultFolderName] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showAddToCollectionModal, setShowAddToCollectionModal] =
+    useState(false);
+  const [viewerNewCollectionName, setViewerNewCollectionName] = useState("");
   const [showCreateVaultFolderModal, setShowCreateVaultFolderModal] =
     useState(false);
   const [status, setStatus] = useState("");
@@ -61,6 +64,12 @@ function App() {
   );
   const activeCollection = collections.find((c) => c.id === activeCollectionId);
   const viewerImage = viewerIndex !== null ? images[viewerIndex] : null;
+  const availableCollectionsForViewer = viewerImage
+    ? collections.filter(
+        (c) =>
+          !c.is_system && !viewerImage.collection_ids.includes(c.id),
+      )
+    : [];
   const selectedCount = selectedFilenames.size;
   const allSelected =
     images.length > 0 && selectedCount === images.length;
@@ -219,6 +228,8 @@ function App() {
   useEffect(() => {
     if (viewerIndex === null) {
       resetViewerTransform();
+      setShowAddToCollectionModal(false);
+      setViewerNewCollectionName("");
     }
   }, [viewerIndex, resetViewerTransform]);
 
@@ -283,7 +294,12 @@ function App() {
       if (!current) return;
 
       if (e.key === "Escape") {
-        setViewerIndex(null);
+        if (showAddToCollectionModal) {
+          setShowAddToCollectionModal(false);
+          setViewerNewCollectionName("");
+        } else {
+          setViewerIndex(null);
+        }
       } else if (e.key === "ArrowLeft") {
         setViewerIndex((i) => (i !== null && i > 0 ? i - 1 : i));
       } else if (e.key === "ArrowRight") {
@@ -306,7 +322,7 @@ function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [viewerIndex, images, refreshAll, viewerZoom, changeZoom, resetViewerTransform, activeVaultFolderId]);
+  }, [viewerIndex, images, refreshAll, viewerZoom, changeZoom, resetViewerTransform, activeVaultFolderId, showAddToCollectionModal]);
 
   async function handlePasteButton() {
     if (!activeCollectionId) {
@@ -443,26 +459,64 @@ function App() {
   async function handleAddToCollection(
     filename: string,
     collectionId: string,
+    options?: { closeModal?: boolean },
   ) {
     try {
       await api.addToCollection(activeVaultFolderId, filename, collectionId);
+      if (options?.closeModal) {
+        setShowAddToCollectionModal(false);
+        setViewerNewCollectionName("");
+      }
       await refreshAll();
-      showStatus("Đã thêm vào bộ sưu tập");
+      const collection = collections.find((c) => c.id === collectionId);
+      showStatus(`Đã thêm vào ${collection?.name ?? collectionId}`);
+    } catch (err) {
+      showStatus(String(err));
+    }
+  }
+
+  async function handleCreateCollectionAndAdd(
+    e: React.FormEvent,
+    filename: string,
+  ) {
+    e.preventDefault();
+    const trimmed = viewerNewCollectionName.trim();
+    if (!trimmed) return;
+    try {
+      const created = await api.createCollection(
+        activeVaultFolderId,
+        trimmed,
+      );
+      await api.addToCollection(activeVaultFolderId, filename, created.id);
+      setViewerNewCollectionName("");
+      setShowAddToCollectionModal(false);
+      await refreshAll();
+      showStatus(`Đã tạo "${created.name}" và thêm ảnh`);
     } catch (err) {
       showStatus(String(err));
     }
   }
 
   async function handleDeleteImage(filename: string) {
-    await api.deleteImage(activeVaultFolderId, filename);
-    setViewerIndex(null);
-    setSelectedFilenames((prev) => {
-      const next = new Set(prev);
-      next.delete(filename);
-      return next;
-    });
-    await refreshAll();
-    showStatus("Đã xóa ảnh");
+    if (!activeCollectionId) return;
+    try {
+      await api.removeFromCollection(
+        activeVaultFolderId,
+        filename,
+        activeCollectionId,
+      );
+      setViewerIndex(null);
+      setSelectedFilenames((prev) => {
+        const next = new Set(prev);
+        next.delete(filename);
+        return next;
+      });
+      await refreshAll();
+      const collectionName = activeCollection?.name ?? activeCollectionId;
+      showStatus(`Đã xóa ảnh khỏi ${collectionName}`);
+    } catch (err) {
+      showStatus(String(err));
+    }
   }
 
   async function handleBulkAddToCollection(collectionId: string) {
@@ -481,30 +535,32 @@ function App() {
   }
 
   async function handleBulkDelete() {
-    if (selectedCount === 0) return;
+    if (selectedCount === 0 || !activeCollectionId) return;
     const count = selectedCount;
+    const collectionName = activeCollection?.name ?? activeCollectionId;
     if (
       !confirm(
-        `Xóa ${count} ảnh đã chọn khỏi tất cả bộ sưu tập trên disk?`,
-      )
-    ) {
-      return;
-    }
-    if (
-      !confirm(
-        `Xác nhận lần cuối: xóa vĩnh viễn ${count} ảnh? Thao tác này không thể hoàn tác.`,
+        `Xóa ${count} ảnh đã chọn khỏi "${collectionName}"? Ảnh vẫn giữ ở các bộ sưu tập khác (nếu có).`,
       )
     ) {
       return;
     }
 
-    for (const filename of selectedFilenames) {
-      await api.deleteImage(activeVaultFolderId, filename);
+    try {
+      for (const filename of selectedFilenames) {
+        await api.removeFromCollection(
+          activeVaultFolderId,
+          filename,
+          activeCollectionId,
+        );
+      }
+      clearSelection();
+      setViewerIndex(null);
+      await refreshAll();
+      showStatus(`Đã xóa ${count} ảnh khỏi ${collectionName}`);
+    } catch (err) {
+      showStatus(String(err));
     }
-    clearSelection();
-    setViewerIndex(null);
-    await refreshAll();
-    showStatus(`Đã xóa ${count} ảnh`);
   }
 
   async function handleOpenVaultFolder(vaultFolderId: string) {
@@ -852,6 +908,91 @@ function App() {
         </div>
       )}
 
+      {showAddToCollectionModal && viewerImage && (
+        <div
+          className="modal-backdrop add-collection-modal-backdrop"
+          onClick={() => {
+            setShowAddToCollectionModal(false);
+            setViewerNewCollectionName("");
+          }}
+        >
+          <div
+            className="modal add-collection-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3>Thêm vào bộ sưu tập</h3>
+            <p>Chọn bộ sưu tập để thêm ảnh này:</p>
+
+            {availableCollectionsForViewer.length > 0 ? (
+              <ul className="collection-picker-list">
+                {availableCollectionsForViewer.map((collection) => (
+                  <li key={collection.id}>
+                    <button
+                      type="button"
+                      className="collection-picker-item"
+                      onClick={() =>
+                        void handleAddToCollection(
+                          viewerImage.filename,
+                          collection.id,
+                          { closeModal: true },
+                        )
+                      }
+                    >
+                      <span className="collection-picker-name">
+                        {collection.name}
+                      </span>
+                      <span className="collection-picker-meta">
+                        {collection.image_count} ảnh
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="collection-picker-empty">
+                Ảnh đã có trong tất cả bộ sưu tập hiện có.
+              </p>
+            )}
+
+            <div className="collection-picker-create">
+              <h4>Tạo bộ sưu tập mới</h4>
+              <form
+                onSubmit={(e) =>
+                  void handleCreateCollectionAndAdd(e, viewerImage.filename)
+                }
+              >
+                <input
+                  autoFocus
+                  value={viewerNewCollectionName}
+                  onChange={(e) => setViewerNewCollectionName(e.target.value)}
+                  placeholder="Tên bộ sưu tập mới..."
+                />
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={!viewerNewCollectionName.trim()}
+                >
+                  Tạo và thêm ảnh
+                </button>
+              </form>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setShowAddToCollectionModal(false);
+                  setViewerNewCollectionName("");
+                }}
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewerImage && viewerIndex !== null && (
         <div className="viewer-backdrop" onClick={() => setViewerIndex(null)}>
           <button
@@ -929,30 +1070,13 @@ function App() {
                     {viewerImage.is_starred ? "★ Đã sao" : "☆ Đánh dấu sao"}
                   </button>
 
-                  <select
-                    className="viewer-select"
-                    defaultValue=""
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      if (value) {
-                        void handleAddToCollection(viewerImage.filename, value);
-                        e.target.value = "";
-                      }
-                    }}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setShowAddToCollectionModal(true)}
                   >
-                    <option value="">+ Thêm vào bộ sưu tập...</option>
-                    {collections
-                      .filter(
-                        (c) =>
-                          !c.is_system &&
-                          !viewerImage.collection_ids.includes(c.id),
-                      )
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                  </select>
+                    + Thêm vào bộ sưu tập...
+                  </button>
 
                   <button
                     type="button"
