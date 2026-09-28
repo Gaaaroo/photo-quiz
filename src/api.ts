@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Collection, ImageRecord, VaultFolder } from "./types";
+import type { Collection, ImageNote, ImageRecord, VaultFolder } from "./types";
 
 export const api = {
   getVaultPath: () => invoke<string>("get_vault_path"),
@@ -71,6 +71,10 @@ export const api = {
     }),
   deleteImage: (vaultFolderId: string, filename: string) =>
     invoke<void>("delete_image", { vaultFolderId, filename }),
+  getImageNote: (vaultFolderId: string, filename: string) =>
+    invoke<ImageNote>("get_image_note", { vaultFolderId, filename }),
+  saveImageNote: (vaultFolderId: string, filename: string, text: string) =>
+    invoke<ImageNote>("save_image_note", { vaultFolderId, filename, text }),
   openVaultFolder: (vaultFolderId: string) =>
     invoke<void>("open_vault_folder", { vaultFolderId }),
   openCollectionFolder: (vaultFolderId: string, collectionId: string) =>

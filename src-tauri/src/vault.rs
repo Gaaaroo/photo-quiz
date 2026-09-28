@@ -1,4 +1,6 @@
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -31,6 +33,15 @@ pub struct ImageRecord {
     pub is_starred: bool,
     pub created_at: String,
     pub collection_ids: Vec<String>,
+    pub has_note: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ImageNote {
+    #[serde(default)]
+    pub filename: String,
+    pub text: String,
+    pub updated_at: String,
 }
 
 pub struct Vault {
@@ -445,6 +456,7 @@ impl Vault {
             return Err("Bộ sưu tập không tồn tại".into());
         }
 
+        let notes = self.load_notes(vault_folder_id)?;
         let mut images = Vec::new();
         for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
@@ -463,6 +475,9 @@ impl Vault {
                 is_starred: self.is_starred_filename(vault_folder_id, &filename),
                 created_at: Self::file_created_at(&path),
                 collection_ids,
+                has_note: notes
+                    .get(&filename)
+                    .is_some_and(|note| !note.text.trim().is_empty()),
             });
         }
 
@@ -510,6 +525,7 @@ impl Vault {
             is_starred: false,
             created_at: Self::file_created_at(&file_path),
             collection_ids: vec![collection_id.to_string()],
+            has_note: false,
         })
     }
 
@@ -531,6 +547,9 @@ impl Vault {
         vault_folder_id: &str,
         filename: &str,
     ) -> Result<ImageRecord, String> {
+        fs::create_dir_all(self.collection_path(vault_folder_id, STARRED_FOLDER))
+            .map_err(|e| e.to_string())?;
+
         let source = self.find_source_path(vault_folder_id, filename)?;
         let starred_path = self
             .collection_path(vault_folder_id, STARRED_FOLDER)
@@ -594,14 +613,18 @@ impl Vault {
 
         match self.find_source_path(vault_folder_id, filename) {
             Ok(source) => self.build_image_record(vault_folder_id, &source, filename),
-            Err(_) => Ok(ImageRecord {
-                id: filename.to_string(),
-                filename: filename.to_string(),
-                file_path: String::new(),
-                is_starred: false,
-                created_at: String::new(),
-                collection_ids: vec![],
-            }),
+            Err(_) => {
+                self.delete_image_note(vault_folder_id, filename)?;
+                Ok(ImageRecord {
+                    id: filename.to_string(),
+                    filename: filename.to_string(),
+                    file_path: String::new(),
+                    is_starred: false,
+                    created_at: String::new(),
+                    collection_ids: vec![],
+                    has_note: false,
+                })
+            }
         }
     }
 
@@ -620,6 +643,75 @@ impl Vault {
                 fs::remove_file(&path).map_err(|e| e.to_string())?;
             }
         }
+        self.delete_image_note(vault_folder_id, filename)?;
+        Ok(())
+    }
+
+    fn notes_path(&self, vault_folder_id: &str) -> PathBuf {
+        self.vault_folder_path(vault_folder_id).join(".notes.json")
+    }
+
+    fn load_notes(&self, vault_folder_id: &str) -> Result<HashMap<String, ImageNote>, String> {
+        let path = self.notes_path(vault_folder_id);
+        if !path.is_file() {
+            return Ok(HashMap::new());
+        }
+        let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if raw.trim().is_empty() {
+            return Ok(HashMap::new());
+        }
+        serde_json::from_str(&raw).map_err(|e| e.to_string())
+    }
+
+    fn save_notes(
+        &self,
+        vault_folder_id: &str,
+        notes: &HashMap<String, ImageNote>,
+    ) -> Result<(), String> {
+        let dir = self.vault_folder_path(vault_folder_id);
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(notes).map_err(|e| e.to_string())?;
+        fs::write(self.notes_path(vault_folder_id), json).map_err(|e| e.to_string())
+    }
+
+    pub fn get_image_note(
+        &self,
+        vault_folder_id: &str,
+        filename: &str,
+    ) -> Result<ImageNote, String> {
+        let notes = self.load_notes(vault_folder_id)?;
+        Ok(notes.get(filename).cloned().unwrap_or(ImageNote {
+            filename: filename.to_string(),
+            ..Default::default()
+        }))
+    }
+
+    pub fn save_image_note(
+        &self,
+        vault_folder_id: &str,
+        filename: &str,
+        text: &str,
+    ) -> Result<ImageNote, String> {
+        let mut notes = self.load_notes(vault_folder_id)?;
+        let note = ImageNote {
+            filename: filename.to_string(),
+            text: text.to_string(),
+            updated_at: Local::now().format("%Y-%m-%d %H:%M").to_string(),
+        };
+        if note.text.trim().is_empty() {
+            notes.remove(filename);
+        } else {
+            notes.insert(filename.to_string(), note.clone());
+        }
+        self.save_notes(vault_folder_id, &notes)?;
+        Ok(note)
+    }
+
+    fn delete_image_note(&self, vault_folder_id: &str, filename: &str) -> Result<(), String> {
+        let mut notes = self.load_notes(vault_folder_id)?;
+        if notes.remove(filename).is_some() {
+            self.save_notes(vault_folder_id, &notes)?;
+        }
         Ok(())
     }
 
@@ -636,6 +728,10 @@ impl Vault {
             is_starred: self.is_starred_filename(vault_folder_id, filename),
             created_at: Self::file_created_at(source),
             collection_ids: self.collections_containing_filename(vault_folder_id, filename)?,
+            has_note: self
+                .load_notes(vault_folder_id)?
+                .get(filename)
+                .is_some_and(|note| !note.text.trim().is_empty()),
         })
     }
 

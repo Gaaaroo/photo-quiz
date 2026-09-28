@@ -3,7 +3,9 @@ mod vault;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::State;
-use vault::{Collection, ImageRecord, Vault, VaultFolder, DEFAULT_VAULT_FOLDER, INBOX_FOLDER};
+use vault::{
+    Collection, ImageNote, ImageRecord, Vault, VaultFolder, DEFAULT_VAULT_FOLDER, INBOX_FOLDER,
+};
 
 pub struct AppState {
     pub vault: Mutex<Vault>,
@@ -183,6 +185,27 @@ fn delete_image(
 }
 
 #[tauri::command]
+fn get_image_note(
+    vault_folder_id: String,
+    filename: String,
+    state: State<AppState>,
+) -> Result<ImageNote, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.get_image_note(&vault_folder_id, &filename)
+}
+
+#[tauri::command]
+fn save_image_note(
+    vault_folder_id: String,
+    filename: String,
+    text: String,
+    state: State<AppState>,
+) -> Result<ImageNote, String> {
+    let vault = state.vault.lock().map_err(|e| e.to_string())?;
+    vault.save_image_note(&vault_folder_id, &filename, &text)
+}
+
+#[tauri::command]
 fn get_default_vault_folder_id() -> String {
     DEFAULT_VAULT_FOLDER.to_string()
 }
@@ -235,6 +258,8 @@ pub fn run() {
             add_to_collection,
             remove_from_collection,
             delete_image,
+            get_image_note,
+            save_image_note,
             get_default_vault_folder_id,
             get_default_collection_id,
             open_vault_folder,

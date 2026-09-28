@@ -18,4 +18,11 @@ export interface ImageRecord {
   is_starred: boolean;
   created_at: string;
   collection_ids: string[];
+  has_note: boolean;
+}
+
+export interface ImageNote {
+  filename?: string;
+  text: string;
+  updated_at: string;
 }

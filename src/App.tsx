@@ -4,6 +4,20 @@ import { api } from "./api";
 import type { Collection, ImageRecord, VaultFolder } from "./types";
 import "./App.css";
 
+type NavSnapshot = {
+  vaultFolderId: string;
+  collectionId: string;
+  viewerIndex: number | null;
+};
+
+function sameNavSnapshot(a: NavSnapshot, b: NavSnapshot) {
+  return (
+    a.vaultFolderId === b.vaultFolderId &&
+    a.collectionId === b.collectionId &&
+    a.viewerIndex === b.viewerIndex
+  );
+}
+
 function App() {
   const [vaultPath, setVaultPath] = useState("");
   const [vaultFolders, setVaultFolders] = useState<VaultFolder[]>([]);
@@ -20,6 +34,7 @@ function App() {
   const [viewerNewCollectionName, setViewerNewCollectionName] = useState("");
   const [showCreateVaultFolderModal, setShowCreateVaultFolderModal] =
     useState(false);
+  const [notesPanelOpen, setNotesPanelOpen] = useState(true);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedFilenames, setSelectedFilenames] = useState<Set<string>>(
@@ -27,8 +42,20 @@ function App() {
   );
   const pasteZoneRef = useRef<HTMLDivElement>(null);
   const imageStageRef = useRef<HTMLDivElement>(null);
+  const filmstripRef = useRef<HTMLDivElement>(null);
   const [viewerZoom, setViewerZoom] = useState(1);
   const [viewerPan, setViewerPan] = useState({ x: 0, y: 0 });
+  const [noteText, setNoteText] = useState("");
+  const [savedNoteText, setSavedNoteText] = useState("");
+  const [noteUpdatedAt, setNoteUpdatedAt] = useState("");
+  const [noteStatus, setNoteStatus] = useState("");
+  const [noteSourceFilename, setNoteSourceFilename] = useState<string | null>(
+    null,
+  );
+  const noteSaveTimerRef = useRef<number | null>(null);
+  const noteTextRef = useRef("");
+  const savedNoteTextRef = useRef("");
+  const noteFilenameRef = useRef<string | null>(null);
   const panDragRef = useRef({
     active: false,
     startX: 0,
@@ -36,10 +63,21 @@ function App() {
     panX: 0,
     panY: 0,
   });
+  const navHistoryRef = useRef<NavSnapshot[]>([]);
+  const navCursorRef = useRef(-1);
+  const ignoreNavRecordRef = useRef(false);
+  const applyingHistoryRef = useRef(false);
+  const navRestoreRef = useRef<NavSnapshot | null>(null);
+  const navLiveRef = useRef<NavSnapshot>({
+    vaultFolderId: "Default",
+    collectionId: "Inbox",
+    viewerIndex: null,
+  });
+  const lastNavFolderRef = useRef("Default");
 
   const MIN_ZOOM = 0.5;
   const MAX_ZOOM = 5;
-  const ZOOM_STEP = 0.25;
+  const ZOOM_STEP = 0.05;
 
   const clampZoom = (value: number) =>
     Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
@@ -50,13 +88,9 @@ function App() {
   }, []);
 
   const changeZoom = useCallback((delta: number) => {
-    setViewerZoom((current) => {
-      const next = clampZoom(Number((current + delta).toFixed(2)));
-      if (next <= 1) {
-        setViewerPan({ x: 0, y: 0 });
-      }
-      return next;
-    });
+    setViewerZoom((current) =>
+      clampZoom(Number((current + delta).toFixed(2))),
+    );
   }, []);
 
   const activeVaultFolder = vaultFolders.find(
@@ -110,10 +144,11 @@ function App() {
     async (vaultFolderId: string, collectionId: string) => {
       if (!collectionId) {
         setImages([]);
-        return;
+        return [] as ImageRecord[];
       }
       const data = await api.listImages(vaultFolderId, collectionId);
       setImages(data);
+      return data;
     },
     [],
   );
@@ -160,13 +195,20 @@ function App() {
       const data = await api.listCollections(activeVaultFolderId);
       if (cancelled) return;
       setCollections(data);
-      setActiveCollectionId((current) =>
-        data.some((collection) => collection.id === current)
-          ? current
-          : (data[0]?.id ?? ""),
-      );
-      setViewerIndex(null);
-      clearSelection();
+      setActiveCollectionId((current) => {
+        const restore = navRestoreRef.current;
+        const wanted =
+          restore && restore.vaultFolderId === activeVaultFolderId
+            ? restore.collectionId
+            : current;
+        return data.some((collection) => collection.id === wanted)
+          ? wanted
+          : (data[0]?.id ?? "");
+      });
+      if (!applyingHistoryRef.current) {
+        setViewerIndex(null);
+        clearSelection();
+      }
     })();
 
     return () => {
@@ -175,17 +217,254 @@ function App() {
   }, [activeVaultFolderId, loading]);
 
   useEffect(() => {
-    if (!loading) {
-      void refreshImages(activeVaultFolderId, activeCollectionId);
-      setViewerIndex(null);
-      clearSelection();
-    }
+    if (loading) return;
+
+    let cancelled = false;
+    void (async () => {
+      const data = await refreshImages(activeVaultFolderId, activeCollectionId);
+      if (cancelled) return;
+
+      if (applyingHistoryRef.current) {
+        const restore = navRestoreRef.current;
+        if (
+          restore &&
+          restore.vaultFolderId === activeVaultFolderId &&
+          restore.collectionId === activeCollectionId
+        ) {
+          ignoreNavRecordRef.current = true;
+          if (restore.viewerIndex === null || data.length === 0) {
+            setViewerIndex(null);
+          } else {
+            setViewerIndex(
+              Math.max(0, Math.min(restore.viewerIndex, data.length - 1)),
+            );
+          }
+          navRestoreRef.current = null;
+        }
+        applyingHistoryRef.current = false;
+        window.setTimeout(() => {
+          ignoreNavRecordRef.current = false;
+        }, 0);
+      } else {
+        setViewerIndex(null);
+        clearSelection();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeCollectionId, activeVaultFolderId, loading, refreshImages]);
+
+  useEffect(() => {
+    navLiveRef.current = {
+      vaultFolderId: activeVaultFolderId,
+      collectionId: activeCollectionId,
+      viewerIndex,
+    };
+  }, [activeVaultFolderId, activeCollectionId, viewerIndex]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (applyingHistoryRef.current) {
+      lastNavFolderRef.current = activeVaultFolderId;
+      return;
+    }
+
+    const folderJustChanged = lastNavFolderRef.current !== activeVaultFolderId;
+    lastNavFolderRef.current = activeVaultFolderId;
+
+    const record = () => {
+      if (applyingHistoryRef.current) return;
+
+      const next: NavSnapshot = {
+        vaultFolderId: activeVaultFolderId,
+        collectionId: activeCollectionId,
+        viewerIndex,
+      };
+      const current = navHistoryRef.current[navCursorRef.current];
+
+      if (ignoreNavRecordRef.current) {
+        ignoreNavRecordRef.current = false;
+        if (current && !sameNavSnapshot(current, next)) {
+          navHistoryRef.current[navCursorRef.current] = next;
+        }
+        return;
+      }
+
+      if (current && sameNavSnapshot(current, next)) return;
+
+      navHistoryRef.current = navHistoryRef.current.slice(
+        0,
+        navCursorRef.current + 1,
+      );
+      navHistoryRef.current.push(next);
+      navCursorRef.current = navHistoryRef.current.length - 1;
+
+      if (navHistoryRef.current.length > 80) {
+        const drop = navHistoryRef.current.length - 80;
+        navHistoryRef.current = navHistoryRef.current.slice(drop);
+        navCursorRef.current -= drop;
+      }
+    };
+
+    const timer = window.setTimeout(record, folderJustChanged ? 120 : 0);
+    return () => window.clearTimeout(timer);
+  }, [loading, activeVaultFolderId, activeCollectionId, viewerIndex]);
+
+  const applyNavSnapshot = useCallback((snapshot: NavSnapshot) => {
+    const live = navLiveRef.current;
+    const needsReload =
+      snapshot.vaultFolderId !== live.vaultFolderId ||
+      snapshot.collectionId !== live.collectionId;
+    ignoreNavRecordRef.current = true;
+    applyingHistoryRef.current = needsReload;
+    navRestoreRef.current = needsReload ? snapshot : null;
+    setActiveVaultFolderId(snapshot.vaultFolderId);
+    setActiveCollectionId(snapshot.collectionId);
+    setViewerIndex(snapshot.viewerIndex);
+    if (!needsReload) {
+      window.setTimeout(() => {
+        ignoreNavRecordRef.current = false;
+      }, 0);
+    }
+  }, []);
+
+  const goNavBack = useCallback(() => {
+    if (navCursorRef.current <= 0) return;
+    navCursorRef.current -= 1;
+    applyNavSnapshot(navHistoryRef.current[navCursorRef.current]);
+  }, [applyNavSnapshot]);
+
+  const goNavForward = useCallback(() => {
+    if (navCursorRef.current >= navHistoryRef.current.length - 1) return;
+    navCursorRef.current += 1;
+    applyNavSnapshot(navHistoryRef.current[navCursorRef.current]);
+  }, [applyNavSnapshot]);
 
   const showStatus = (message: string) => {
     setStatus(message);
     window.setTimeout(() => setStatus(""), 2500);
   };
+
+  const persistNote = useCallback(
+    async (filename: string, text: string) => {
+      const saved = await api.saveImageNote(activeVaultFolderId, filename, text);
+      setSavedNoteText(saved.text);
+      setNoteUpdatedAt(saved.updated_at);
+      setNoteStatus(saved.text.trim() ? "Đã lưu" : "");
+      setImages((prev) =>
+        prev.map((image) =>
+          image.filename === filename
+            ? { ...image, has_note: saved.text.trim().length > 0 }
+            : image,
+        ),
+      );
+    },
+    [activeVaultFolderId],
+  );
+
+  useEffect(() => {
+    noteTextRef.current = noteText;
+  }, [noteText]);
+
+  useEffect(() => {
+    savedNoteTextRef.current = savedNoteText;
+  }, [savedNoteText]);
+
+  useEffect(() => {
+    const previousFilename = noteFilenameRef.current;
+    const nextFilename = viewerImage?.filename ?? null;
+
+    if (
+      previousFilename &&
+      previousFilename !== nextFilename &&
+      noteTextRef.current !== savedNoteTextRef.current
+    ) {
+      const flushedFilename = previousFilename;
+      const flushedText = noteTextRef.current;
+      void api
+        .saveImageNote(activeVaultFolderId, flushedFilename, flushedText)
+        .then((saved) => {
+          setImages((prev) =>
+            prev.map((image) =>
+              image.filename === flushedFilename
+                ? { ...image, has_note: saved.text.trim().length > 0 }
+                : image,
+            ),
+          );
+        })
+        .catch((err) => showStatus(String(err)));
+    }
+
+    noteFilenameRef.current = nextFilename;
+  }, [activeVaultFolderId, viewerImage?.filename]);
+
+  useEffect(() => {
+    if (!viewerImage) {
+      setNoteText("");
+      setSavedNoteText("");
+      setNoteUpdatedAt("");
+      setNoteStatus("");
+      setNoteSourceFilename(null);
+      return;
+    }
+
+    const filename = viewerImage.filename;
+    setNoteSourceFilename(null);
+    setNoteText("");
+    setSavedNoteText("");
+    setNoteUpdatedAt("");
+    setNoteStatus("");
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const note = await api.getImageNote(activeVaultFolderId, filename);
+        if (cancelled) return;
+        setNoteText(note.text);
+        setSavedNoteText(note.text);
+        setNoteUpdatedAt(note.updated_at);
+        setNoteStatus("");
+        setNoteSourceFilename(filename);
+      } catch (err) {
+        if (!cancelled) showStatus(String(err));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVaultFolderId, viewerImage?.filename]);
+
+  useEffect(() => {
+    if (!viewerImage) return;
+    if (noteSourceFilename !== viewerImage.filename) return;
+    if (noteText === savedNoteText) return;
+
+    setNoteStatus("Đang lưu...");
+    if (noteSaveTimerRef.current) {
+      window.clearTimeout(noteSaveTimerRef.current);
+    }
+    const filename = viewerImage.filename;
+    noteSaveTimerRef.current = window.setTimeout(() => {
+      void persistNote(filename, noteText).catch((err) =>
+        showStatus(String(err)),
+      );
+    }, 500);
+
+    return () => {
+      if (noteSaveTimerRef.current) {
+        window.clearTimeout(noteSaveTimerRef.current);
+      }
+    };
+  }, [
+    noteText,
+    savedNoteText,
+    viewerImage?.filename,
+    noteSourceFilename,
+    persistNote,
+  ]);
 
   const handlePaste = useCallback(
     async (event: ClipboardEvent) => {
@@ -234,19 +513,27 @@ function App() {
   }, [viewerIndex, resetViewerTransform]);
 
   useEffect(() => {
+    if (viewerIndex === null) return;
+    const active = filmstripRef.current?.querySelector<HTMLElement>(
+      `[data-thumb-index="${viewerIndex}"]`,
+    );
+    active?.scrollIntoView({
+      behavior: "smooth",
+      inline: "center",
+      block: "nearest",
+    });
+  }, [viewerIndex]);
+
+  useEffect(() => {
     const stage = imageStageRef.current;
     if (!stage || viewerIndex === null) return;
 
     function onWheel(e: WheelEvent) {
       e.preventDefault();
       const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-      setViewerZoom((current) => {
-        const next = clampZoom(Number((current + delta).toFixed(2)));
-        if (next <= 1) {
-          setViewerPan({ x: 0, y: 0 });
-        }
-        return next;
-      });
+      setViewerZoom((current) =>
+        clampZoom(Number((current + delta).toFixed(2))),
+      );
     }
 
     stage.addEventListener("wheel", onWheel, { passive: false });
@@ -276,8 +563,58 @@ function App() {
     };
   }, [viewerIndex]);
 
+  useEffect(() => {
+    function isMouseBack(e: MouseEvent) {
+      return e.button === 3;
+    }
+
+    function isMouseForward(e: MouseEvent) {
+      return e.button === 4;
+    }
+
+    function blockBrowserNav(e: MouseEvent) {
+      if (isMouseBack(e) || isMouseForward(e)) {
+        e.preventDefault();
+      }
+    }
+
+    function onMouseSideButton(e: MouseEvent) {
+      if (!isMouseBack(e) && !isMouseForward(e)) return;
+      e.preventDefault();
+      if (
+        showAddToCollectionModal ||
+        showCreateModal ||
+        showCreateVaultFolderModal
+      ) {
+        return;
+      }
+
+      if (isMouseBack(e)) {
+        goNavBack();
+      } else {
+        goNavForward();
+      }
+    }
+
+    const opts: AddEventListenerOptions = { capture: true };
+    window.addEventListener("mousedown", blockBrowserNav, opts);
+    window.addEventListener("mouseup", onMouseSideButton, opts);
+    window.addEventListener("auxclick", blockBrowserNav, opts);
+    return () => {
+      window.removeEventListener("mousedown", blockBrowserNav, opts);
+      window.removeEventListener("mouseup", onMouseSideButton, opts);
+      window.removeEventListener("auxclick", blockBrowserNav, opts);
+    };
+  }, [
+    goNavBack,
+    goNavForward,
+    showAddToCollectionModal,
+    showCreateModal,
+    showCreateVaultFolderModal,
+  ]);
+
   function handleImagePanStart(e: React.MouseEvent) {
-    if (viewerZoom <= 1 || e.button !== 0) return;
+    if (e.button !== 0) return;
     panDragRef.current = {
       active: true,
       startX: e.clientX,
@@ -290,8 +627,12 @@ function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (viewerIndex === null) return;
-      const current = images[viewerIndex];
-      if (!current) return;
+      const target = e.target as HTMLElement | null;
+      const typingInField =
+        target &&
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          target.isContentEditable);
 
       if (e.key === "Escape") {
         if (showAddToCollectionModal) {
@@ -300,7 +641,15 @@ function App() {
         } else {
           setViewerIndex(null);
         }
-      } else if (e.key === "ArrowLeft") {
+        return;
+      }
+
+      if (typingInField) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const current = images[viewerIndex];
+      if (!current) return;
+
+      if (e.key === "ArrowLeft") {
         setViewerIndex((i) => (i !== null && i > 0 ? i - 1 : i));
       } else if (e.key === "ArrowRight") {
         setViewerIndex((i) =>
@@ -312,17 +661,18 @@ function App() {
         changeZoom(-ZOOM_STEP);
       } else if (e.key === "0") {
         resetViewerTransform();
-      } else if (e.key === "*") {
-        void (async () => {
-          await api.toggleStar(activeVaultFolderId, current.filename);
-          await refreshAll();
-        })();
+      } else if (e.key === "s" || e.key === "S" || e.key === "*") {
+        e.preventDefault();
+        void handleToggleStar(current);
+      } else if (e.key === "d" || e.key === "D") {
+        e.preventDefault();
+        void handleDeleteImage(current.filename);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [viewerIndex, images, refreshAll, viewerZoom, changeZoom, resetViewerTransform, activeVaultFolderId, showAddToCollectionModal]);
+  }, [viewerIndex, images, viewerZoom, changeZoom, resetViewerTransform, showAddToCollectionModal]);
 
   async function handlePasteButton() {
     if (!activeCollectionId) {
@@ -451,9 +801,46 @@ function App() {
   }
 
   async function handleToggleStar(image: ImageRecord) {
-    await api.toggleStar(activeVaultFolderId, image.filename);
-    await refreshAll();
-    showStatus(image.is_starred ? "Đã bỏ đánh dấu sao" : "Đã thêm vào ⭐ Đã đánh dấu");
+    try {
+      const updated = await api.toggleStar(activeVaultFolderId, image.filename);
+      const stillInView = updated.collection_ids.includes(activeCollectionId);
+
+      if (!stillInView) {
+        const deletedIndex = viewerIndex;
+        const remainingCount = images.length - 1;
+        setImages((prev) =>
+          prev.filter((item) => item.filename !== image.filename),
+        );
+        if (deletedIndex === null || remainingCount <= 0) {
+          setViewerIndex(null);
+        } else if (deletedIndex >= remainingCount) {
+          setViewerIndex(remainingCount - 1);
+        } else {
+          setViewerIndex(deletedIndex);
+        }
+      } else {
+        setImages((prev) =>
+          prev.map((item) =>
+            item.filename === image.filename
+              ? {
+                  ...item,
+                  is_starred: updated.is_starred,
+                  collection_ids: updated.collection_ids,
+                }
+              : item,
+          ),
+        );
+      }
+
+      await refreshCollections(activeVaultFolderId);
+      showStatus(
+        updated.is_starred
+          ? "Đã thêm vào ⭐ Đã đánh dấu"
+          : "Đã bỏ đánh dấu sao",
+      );
+    } catch (err) {
+      showStatus(String(err));
+    }
   }
 
   async function handleAddToCollection(
@@ -499,20 +886,41 @@ function App() {
 
   async function handleDeleteImage(filename: string) {
     if (!activeCollectionId) return;
+    const collectionName = activeCollection?.name ?? activeCollectionId;
+    if (
+      !confirm(
+        `Xóa ảnh khỏi "${collectionName}"?\nẢnh vẫn giữ ở các bộ sưu tập khác (nếu có).`,
+      )
+    ) {
+      return;
+    }
+
+    // Index hiện tại — sau khi xóa, ảnh kế tiếp sẽ dồn vào vị trí này
+    const deletedIndex = viewerIndex;
+    const remainingCount = images.length - 1;
+
     try {
+      // Chỉ gỡ khỏi bộ sưu tập hiện tại, không xóa file khỏi các bộ khác
       await api.removeFromCollection(
         activeVaultFolderId,
         filename,
         activeCollectionId,
       );
-      setViewerIndex(null);
       setSelectedFilenames((prev) => {
         const next = new Set(prev);
         next.delete(filename);
         return next;
       });
       await refreshAll();
-      const collectionName = activeCollection?.name ?? activeCollectionId;
+
+      if (deletedIndex === null || remainingCount <= 0) {
+        setViewerIndex(null);
+      } else if (deletedIndex >= remainingCount) {
+        setViewerIndex(remainingCount - 1);
+      } else {
+        setViewerIndex(deletedIndex);
+      }
+
       showStatus(`Đã xóa ảnh khỏi ${collectionName}`);
     } catch (err) {
       showStatus(String(err));
@@ -613,7 +1021,11 @@ function App() {
                 <button
                   type="button"
                   className="sidebar-row-label"
-                  onClick={() => setActiveVaultFolderId(folder.id)}
+                  onClick={() => {
+                    if (folder.id === activeVaultFolderId) return;
+                    setActiveVaultFolderId(folder.id);
+                    setViewerIndex(null);
+                  }}
                 >
                   <span className="sidebar-row-name">{folder.name}</span>
                 </button>
@@ -671,7 +1083,11 @@ function App() {
                 <button
                   type="button"
                   className="sidebar-row-label"
-                  onClick={() => setActiveCollectionId(collection.id)}
+                  onClick={() => {
+                    if (collection.id === activeCollectionId) return;
+                    setActiveCollectionId(collection.id);
+                    setViewerIndex(null);
+                  }}
                 >
                   <span className="sidebar-row-name">{collection.name}</span>
                   <span className="count">{collection.image_count}</span>
@@ -810,40 +1226,49 @@ function App() {
             <p>Chụp màn hình (Win+Shift+S) rồi nhấn Ctrl+V hoặc bấm Paste ảnh.</p>
           </div>
         ) : (
-          <div className="gallery">
-            {images.map((image, index) => {
-              const isSelected = selectedFilenames.has(image.filename);
-              return (
-                <div
-                  key={`${image.id}-${index}`}
-                  className={`gallery-item ${isSelected ? "selected" : ""}`}
-                >
-                  <label
-                    className="gallery-check"
-                    onClick={(e) => e.stopPropagation()}
+          <div className="gallery-scroll">
+            <div className="gallery">
+              {images.map((image, index) => {
+                const isSelected = selectedFilenames.has(image.filename);
+                return (
+                  <div
+                    key={`${image.id}-${index}`}
+                    className={`gallery-item ${isSelected ? "selected" : ""}`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(image.filename)}
-                      aria-label={`Chọn ${image.filename}`}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="gallery-open"
-                    onClick={() => setViewerIndex(index)}
-                  >
-                    <img
-                      src={convertFileSrc(image.file_path)}
-                      alt={image.filename}
-                      loading="lazy"
-                    />
-                  </button>
-                  {image.is_starred && <span className="star-badge">★</span>}
-                </div>
-              );
-            })}
+                    <label
+                      className="gallery-check"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(image.filename)}
+                        aria-label={`Chọn ${image.filename}`}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="gallery-open"
+                      onClick={() => setViewerIndex(index)}
+                    >
+                      <span className="gallery-thumb">
+                        <img
+                          src={convertFileSrc(image.file_path)}
+                          alt={image.filename}
+                          loading="lazy"
+                        />
+                      </span>
+                    </button>
+                    {image.is_starred && <span className="star-badge">★</span>}
+                    {image.has_note && (
+                      <span className="note-badge" title="Có ghi chú">
+                        ✎
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </main>
@@ -994,30 +1419,77 @@ function App() {
       )}
 
       {viewerImage && viewerIndex !== null && (
-        <div className="viewer-backdrop" onClick={() => setViewerIndex(null)}>
-          <button
-            type="button"
-            className="viewer-close"
-            aria-label="Đóng"
-            onClick={() => setViewerIndex(null)}
-          >
-            ✕
-          </button>
-          <div className="viewer" onClick={(e) => e.stopPropagation()}>
-            <button
-              className="nav-btn prev"
-              disabled={viewerIndex === 0}
-              onClick={() => setViewerIndex(viewerIndex - 1)}
-            >
-              ‹
-            </button>
-
-            <div className="viewer-content">
+        <div className="viewer-backdrop">
+          <div className={`viewer ${notesPanelOpen ? "is-notes-open" : ""}`}>
+            <div className="viewer-main">
               <div
                 ref={imageStageRef}
-                className={`viewer-image-stage ${viewerZoom > 1 ? "is-panning" : ""}`}
+                className="viewer-image-stage is-panning"
                 onMouseDown={handleImagePanStart}
               >
+                <div
+                  className="viewer-stage-top"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <span className="viewer-counter" title={`${activeVaultFolder?.name ?? activeVaultFolderId} / ${activeCollection?.name ?? activeCollectionId}`}>
+                    <span className="viewer-counter-path">
+                      {activeVaultFolder?.name ?? activeVaultFolderId}
+                      <span className="viewer-counter-sep">/</span>
+                      {activeCollection?.name ?? activeCollectionId}
+                    </span>
+                    <span className="viewer-counter-index">
+                      {viewerIndex + 1}/{images.length}
+                    </span>
+                  </span>
+                  <div className="viewer-stage-tools">
+                    <button
+                      type="button"
+                      className={`viewer-notes-toggle ${notesPanelOpen ? "active" : ""} ${noteText.trim() ? "has-content" : ""}`}
+                      onClick={() => setNotesPanelOpen((open) => !open)}
+                    >
+                      {notesPanelOpen ? "Ẩn ghi chú" : "Ghi chú"}
+                    </button>
+                    <div className="viewer-zoom-controls">
+                      <button
+                        type="button"
+                        aria-label="Thu nhỏ"
+                        onClick={() => changeZoom(-ZOOM_STEP)}
+                      >
+                        −
+                      </button>
+                      <span>{Math.round(viewerZoom * 100)}%</span>
+                      <button
+                        type="button"
+                        aria-label="Phóng to"
+                        onClick={() => changeZoom(ZOOM_STEP)}
+                      >
+                        +
+                      </button>
+                      <button type="button" onClick={resetViewerTransform}>
+                        Vừa khung
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="viewer-close"
+                      aria-label="Đóng"
+                      onClick={() => setViewerIndex(null)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="nav-btn prev"
+                  disabled={viewerIndex === 0}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => setViewerIndex(viewerIndex - 1)}
+                >
+                  ‹
+                </button>
+
                 <img
                   src={convertFileSrc(viewerImage.file_path)}
                   alt={viewerImage.filename}
@@ -1026,76 +1498,121 @@ function App() {
                     transform: `translate(${viewerPan.x}px, ${viewerPan.y}px) scale(${viewerZoom})`,
                   }}
                 />
-                <div
-                  className="viewer-zoom-controls"
+
+                <button
+                  type="button"
+                  className="nav-btn next"
+                  disabled={viewerIndex === images.length - 1}
                   onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => setViewerIndex(viewerIndex + 1)}
                 >
-                  <button
-                    type="button"
-                    aria-label="Thu nhỏ"
-                    onClick={() => changeZoom(-ZOOM_STEP)}
-                  >
-                    −
-                  </button>
-                  <span>{Math.round(viewerZoom * 100)}%</span>
-                  <button
-                    type="button"
-                    aria-label="Phóng to"
-                    onClick={() => changeZoom(ZOOM_STEP)}
-                  >
-                    +
-                  </button>
-                  <button type="button" onClick={resetViewerTransform}>
-                    Vừa khung
-                  </button>
-                </div>
+                  ›
+                </button>
               </div>
-              <div className="viewer-footer">
-                <div className="viewer-meta">
-                  <span className="viewer-badge">
-                    {viewerIndex + 1} / {images.length}
-                  </span>
+
+              <div className="viewer-image-actions">
+                <button
+                  type="button"
+                  className={viewerImage.is_starred ? "is-starred" : ""}
+                  onClick={() => void handleToggleStar(viewerImage)}
+                >
+                  {viewerImage.is_starred ? "★ Đã đánh dấu sao (S)" : "☆ Đánh dấu sao (S)"}
+                </button>
+                <button
+                  type="button"
+                  className="is-collection"
+                  onClick={() => setShowAddToCollectionModal(true)}
+                >
+                  + Thêm vào bộ sưu tập
+                </button>
+                <button
+                  type="button"
+                  className="is-danger"
+                  onClick={() => void handleDeleteImage(viewerImage.filename)}
+                >
+                  Xóa khỏi bộ sưu tập (D)
+                </button>
+              </div>
+
+              <div className="viewer-filmstrip-wrap">
+                <div className="viewer-filmstrip" ref={filmstripRef}>
+                  {images.map((image, index) => (
+                    <button
+                      key={`${image.id}-${index}`}
+                      type="button"
+                      data-thumb-index={index}
+                      className={`viewer-thumb ${index === viewerIndex ? "active" : ""} ${image.has_note ? "has-note" : ""}`}
+                      onClick={() => setViewerIndex(index)}
+                    >
+                      <img
+                        src={convertFileSrc(image.file_path)}
+                        alt=""
+                        loading="lazy"
+                      />
+                      <span className="viewer-thumb-index">{index + 1}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="viewer-caption">
                   <span className="viewer-filename">{viewerImage.filename}</span>
                   <span>{viewerImage.created_at}</span>
-                </div>
-                <p className="viewer-hint">
-                  Cuộn chuột hoặc +/- để zoom · ← → chuyển ảnh · Esc để đóng
-                </p>
-                <div className="viewer-actions">
-                  <button
-                    type="button"
-                    className={`btn ${viewerImage.is_starred ? "active" : ""}`}
-                    onClick={() => handleToggleStar(viewerImage)}
-                  >
-                    {viewerImage.is_starred ? "★ Đã sao" : "☆ Đánh dấu sao"}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => setShowAddToCollectionModal(true)}
-                  >
-                    + Thêm vào bộ sưu tập...
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn danger"
-                    onClick={() => handleDeleteImage(viewerImage.filename)}
-                  >
-                    Xóa ảnh
-                  </button>
                 </div>
               </div>
             </div>
 
-            <button
-              className="nav-btn next"
-              disabled={viewerIndex === images.length - 1}
-              onClick={() => setViewerIndex(viewerIndex + 1)}
-            >
-              ›
-            </button>
+            {notesPanelOpen && (
+            <aside className="viewer-sidebar">
+              <section className="viewer-notes">
+                <div className="viewer-notes-header">
+                  <div>
+                    <h3>Ghi chú</h3>
+                    <p>Gắn với ảnh này — chuyển hình sẽ mở ghi chú tương ứng.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="viewer-close"
+                    aria-label="Ẩn ghi chú"
+                    onClick={() => setNotesPanelOpen(false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <textarea
+                  className="viewer-notes-input"
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="Viết ghi chú cho ảnh này: đáp án, giải thích, mẹo nhớ..."
+                  spellCheck={false}
+                />
+
+                <div className="viewer-notes-footer">
+                  <span>
+                    {noteStatus ||
+                      (noteUpdatedAt
+                        ? `Cập nhật ${noteUpdatedAt}`
+                        : "Chưa có ghi chú")}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={
+                      noteSourceFilename !== viewerImage.filename ||
+                      noteText === savedNoteText
+                    }
+                    onClick={() =>
+                      void persistNote(viewerImage.filename, noteText).catch(
+                        (err) => showStatus(String(err)),
+                      )
+                    }
+                  >
+                    Lưu
+                  </button>
+                </div>
+              </section>
+            </aside>
+            )}
           </div>
         </div>
       )}
